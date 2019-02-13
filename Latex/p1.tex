@@ -255,12 +255,608 @@ which is not very different from the result of approach 1.\\\\
 \textbf{Conclusion} After these approaches, I decided to choose a linear SVC with L2 penalty as my final model, with $C=0.040$
 
 \newpage
-\section*{Code}
+\section*{Appendix: Code}
+\subsection*{Functions}
 \begin{lstlisting}
 #!/usr/bin/env python
+# EECS 445 - Winter 2018
+# Project 1 - project1.py
+
+import pandas as pd
+import numpy as np
+import itertools
+import string
+import random
+
+from sklearn.svm import SVC, LinearSVC
+from sklearn.model_selection import StratifiedKFold, GridSearchCV
+from sklearn import metrics
+from matplotlib import pyplot as plt
+
+def select_classifier(penalty='l2', c=1.0, degree=1, r=0.0, class_weight='balanced'):
+    """
+        Return a linear svm classifier based on the given
+        penalty function and regularization parameter c.
+        """
+    # TODO: Optionally implement this helper function if you would like to
+    # instantiate your SVM classifiers in a single function. You will need
+    # to use the above parameters throughout the assignment.
+    if penalty=="l2":
+        if degree==1:
+            return SVC(kernel="linear", C=c, degree=degree, coef0=r, class_weight=class_weight)
+        return SVC(kernel="poly", C=c, degree=degree, gamma="auto",coef0=r, class_weight=class_weight)
+    if penalty=="l1":
+        return LinearSVC(penalty="l1", C=c, class_weight=class_weight, dual=False, max_iter=10000)
 
 
+def extract_dictionary(df):
+    """
+        Reads a panda dataframe, and returns a dictionary of distinct words
+        mapping from each distinct word to its index (ordered by when it was found).
+        Input:
+        df: dataframe/output of load_data()
+        Returns:
+        a dictionary of distinct words that maps each distinct word
+        to a unique index corresponding to when it was first found while
+        iterating over all words in each review in the dataframe df
+        """
+    word_dict = {}
+
+    # TODO: Implement this function
+    index=0
+    for text in df["text"]:
+        for p in string.punctuation:
+            text=text.replace(p," ")
+        text=text.lower()
+        spl=text.split()
+        for word in spl:
+            if word not in word_dict:
+                word_dict[word]=index
+                index=index+1
+    return word_dict
+
+
+def generate_feature_matrix(df, word_dict):
+    """
+        Reads a dataframe and the dictionary of unique words
+        to generate a matrix of {1, 0} feature vectors for each review.
+        Use the word_dict to find the correct index to set to 1 for each place
+        in the feature vector. The resulting feature matrix should be of
+        dimension (number of reviews, number of words).
+        Input:
+        df: dataframe that has the ratings and labels
+        word_list: dictionary of words mapping to indices
+        Returns:
+        a feature matrix of dimension (number of reviews, number of words)
+        """
+    number_of_reviews = df.shape[0]
+    number_of_words = len(word_dict)
+    feature_matrix = np.zeros((number_of_reviews, number_of_words))
+    # TODO: Implement this function
+    index=0
+    for text in df["text"]:
+        for p in string.punctuation:
+            text=text.replace(p," ")
+        text=text.lower()
+        spl=text.split()
+        for word in spl:
+            if word in word_dict:
+                feature_matrix[index,word_dict[word]]=1
+        index=index+1
+    return feature_matrix
+
+def cv_performance(clf, X, y, k=5, metric="accuracy"):
+    """
+        Splits the data X and the labels y into k-folds and runs k-fold
+        cross-validation: for each fold i in 1...k, trains a classifier on
+        all the data except the ith fold, and tests on the ith fold.
+        Calculates the k-fold cross-validation performance metric for classifier
+        clf by averaging the performance across folds.
+        Input:
+        clf: an instance of SVC()
+        X: (n,d) array of feature vectors, where n is the number of examples
+        and d is the number of features
+        y: (n,) array of binary labels {1,-1}
+        k: an int specifying the number of folds (default=5)
+        metric: string specifying the performance metric (default='accuracy'
+        other options: 'f1-score', 'auroc', 'precision', 'sensitivity',
+        and 'specificity')
+        Returns:
+        average 'test' performance across the k folds as np.float64
+        """
+    # TODO: Implement this function
+    scores = []
+    #HINT: You may find the StratifiedKFold from sklearn.model_selection
+    #to be useful
+    skf = StratifiedKFold(n_splits=k)
+    skf.get_n_splits(X,y)
+    for train_index, test_index in skf.split(X, y):
+        X_train, X_test = X[train_index], X[test_index]
+        y_train, y_test = y[train_index], y[test_index]
+        clf.fit(X_train,y_train)
+        y_pred = clf.predict(X_test)
+        if metric=="auroc":
+            y_pred=clf.decision_function(X_test)
+        score=performance(y_test, y_pred, metric)
+        scores.append(score)
+
+    #And return the average performance across all fold splits.
+    return np.array(scores).mean()
+
+
+def select_param_linear(X, y, k=5, metric="accuracy", C_range = [], penalty='l2'):
+    """
+        Sweeps different settings for the hyperparameter of a linear-kernel SVM,
+        calculating the k-fold CV performance for each setting on X, y.
+        Input:
+        X: (n,d) array of feature vectors, where n is the number of examples
+        and d is the number of features
+        y: (n,) array of binary labels {1,-1}
+        k: int specifying the number of folds (default=5)
+        metric: string specifying the performance metric (default='accuracy',
+        other options: 'f1-score', 'auroc', 'precision', 'sensitivity',
+        and 'specificity')
+        C_range: an array with C values to be searched over
+        Returns:
+        The parameter value for a linear-kernel SVM that maximizes the
+        average 5-fold CV performance.
+        """
+    # TODO: Implement this function
+    #HINT: You should be using your cv_performance function here
+    #to evaluate the performance of each SVM
+    maxc=0
+    maxperf=0
+    for c in C_range:
+        clf = select_classifier(c=c)
+        perf = cv_performance(clf, X, y, k=5, metric=metric)
+        print(c, perf)
+        if perf>maxperf:
+            maxperf=perf
+            maxc=c
+    return maxc
+
+
+def plot_weight(X,y,penalty,metric="",C_range=[]):
+    """
+        Takes as input the training data X and labels y and plots the L0-norm
+        (number of nonzero elements) of the coefficients learned by a classifier
+        as a function of the C-values of the classifier.
+        """
+
+    print("Plotting the number of nonzero entries of the parameter vector as a function of C")
+    norm0 = []
+
+    # TODO: Implement this part of the function
+    #Here, for each value of c in C_range, you should
+    #append to norm0 the L0-norm of the theta vector that is learned
+    #when fitting an L2- or L1-penalty, degree=1 SVM to the data (X, y)
+
+    for c in C_range:
+        clf = select_classifier(penalty=penalty, c=c)
+        clf.fit(X,y)
+        n0=0
+        for theta in clf.coef_:
+            for c in theta:
+                if c!=0:
+                    n0+=1
+        norm0.append(n0)
+
+    #This code will plot your L0-norm as a function of c
+    plt.plot(C_range, norm0)
+    plt.xscale('log')
+    plt.legend(['L0-norm'])
+    plt.xlabel("Value of C")
+    plt.ylabel("Norm of theta")
+    plt.title('Norm-'+penalty+'_penalty.png')
+    plt.savefig('Norm-'+penalty+'_penalty.png')
+    plt.close()
+
+
+def select_param_quadratic(X, y, k=5, metric="accuracy", param_range=[]):
+    """
+        Sweeps different settings for the hyperparameters of an quadratic-kernel SVM,
+        calculating the k-fold CV performance for each setting on X, y.
+        Input:
+        X: (n,d) array of feature vectors, where n is the number of examples
+        and d is the number of features
+        y: (n,) array of binary labels {1,-1}
+        k: an int specifying the number of folds (default=5)
+        metric: string specifying the performance metric (default='accuracy'
+        other options: 'f1-score', 'auroc', 'precision', 'sensitivity',
+        and 'specificity')
+        parameter_values: a (num_param, 2)-sized array containing the
+        parameter values to search over. The first column should
+        represent the values for C, and the second column should
+        represent the values for r. Each row of this array thus
+        represents a pair of parameters to be tried together.
+        Returns:
+        The parameter value(s) for a quadratic-kernel SVM that maximize
+        the average 5-fold CV performance
+        """
+    # TODO: Implement this function
+    # Hint: This will be very similar to select_param_linear, except
+    # the type of SVM model you are using will be different...
+
+    maxc=0
+    macr=0
+    maxperf=0
+    for c,r in param_range:
+        clf = select_classifier(c=c, degree=2, r=r)
+        #clf = SVC(kernel = 'poly', gamma = 'auto',degree = 2, C = c, coef0 = r, class_weight = 'balanced')
+        perf=cv_performance(clf, X, y, k=k, metric=metric)
+        print(c,r,perf)
+        if perf>maxperf:
+            maxc=c
+            maxr=r
+            maxperf=perf
+    return maxc, maxr
+
+
+def performance(y_true, y_pred, metric="accuracy"):
+    """
+        Calculates the performance metric as evaluated on the true labels
+        y_true versus the predicted labels y_pred.
+        Input:
+        y_true: (n,) array containing known labels
+        y_pred: (n,) array containing predicted scores
+        metric: string specifying the performance metric (default='accuracy'
+        other options: 'f1-score', 'auroc', 'precision', 'sensitivity',
+        and 'specificity')
+        Returns:
+        the performance as an np.float64
+        """
+    # TODO: Implement this function
+    # This is an optional but very useful function to implement.
+    # See the sklearn.metrics documentation for pointers on how to implement
+    # the requested metrics.
+
+    if metric=="auroc":
+        return metrics.roc_auc_score(y_true,y_pred)
+    m=metrics.confusion_matrix(y_true,y_pred)
+    tn, fp, fn, tp = m.ravel()
+    if metric=="accuracy":
+        return (tp+tn)/(tp+fn+fp+tn)
+    if metric=="f1-score":
+        pre=tp/(tp+fp)
+        sen=tp/(tp+fn)
+        return 2*pre*sen/(pre+sen)
+    if metric=="sensitivity":
+        return tp/(tp+fn)
+    if metric=="precision":
+        return tp/(tp+fp)
+    if metric=="specificity":
+        return tn/(tn+fp)
 \end{lstlisting}
+
+\subsection*{2 Feature Extraction}
+\begin{lstlisting}
+#!/usr/bin/env python
+X_train, Y_train, X_test, Y_test, dictionary_binary = get_split_binary_data()
+IMB_features, IMB_labels = get_imbalanced_data(dictionary_binary)
+IMB_test_features, IMB_test_labels = get_imbalanced_test(dictionary_binary)
+# q2
+print("Number of unique words:",len(X_train[0]))
+print("Average number of non-zero features:",np.sum(X_train)/len(X_train))
+\end{lstlisting}
+
+\subsection*{3 Hyperparameter Feature Selection}
+\begin{lstlisting}
+#!/usr/bin/env python
+#q3.1(c)
+mets=["accuracy","f1-score","auroc","precision","sensitivity","specificity"]
+selected_C=0
+C_range=[1e-3, 1e-2, 0.1,1,10,100,1000]
+for me in mets:
+    maxc=select_param_linear(X_train, Y_train, metric=me, C_range = C_range)
+    clf=select_classifier(c=maxc)
+    score=cv_performance(clf, X_train, Y_train, metric=me)
+    print("C=",maxc,"is optimal under",me,"metric, cv_perf=",score)
+    if me=="accuracy":
+        selected_C=maxc
+
+#q3.1(d)
+clf=select_classifier(c=selected_C)
+clf.fit(X_train,Y_train)
+Y_pred = clf.decision_function(X_test)
+auroc_score=performance(Y_test, Y_pred, metric="auroc")
+print("q3.1(d) Choose C which maximizes accuracy")
+print("The AUROC score is:",auroc_score)
+Y_pred = clf.predict(X_test)
+for me in mets:
+    if me!="auroc":
+        score=performance(Y_test, Y_pred, metric=me)
+        print("The",me,"score is",score)
+
+#q3.1(e)
+plot_weight(X_train, Y_train, "l2", C_range=C_range)
+
+#q3.1(f)
+clf = select_classifier(c=0.1)
+clf.fit(X_train,Y_train)
+arg=clf.coef_[0].argsort()
+min_ind4=arg[:4]
+max_ind4=arg[:-5:-1]
+minwords=[]
+maxwords=[]
+
+for ind in min_ind4:
+    for word, index in dictionary_binary.items():
+        if index==ind:
+            minwords.append(word)
+print("Most negative words")
+for i in range(4):
+    print(clf.coef_[0,min_ind4[i]], minwords[i])
+
+
+for ind in max_ind4:
+    for word, index in dictionary_binary.items():
+        if index==ind:
+            maxwords.append(word)
+print("Most positive words")
+for i in range(4):
+    print(clf.coef_[0,max_ind4[i]], maxwords[i])
+
+#q3.2(a)
+r_range=[1e-3, 1e-2, 0.1, 1, 10, 100, 1000]
+cr_range=[]
+for c in C_range:
+    for r in r_range:
+        cr_range.append([c,r])
+print("q3.2(a) Grid Search")
+for me in mets:
+    [maxc,maxr]=select_param_quadratic(X_train, Y_train, metric=me, param_range=cr_range)
+    print("C=",maxc,"r=",maxr,"is optimal under",me,"metric")
+
+#q3.2(b)
+cr_range=[]
+for i in range(25):
+    lgc=random.uniform(-3,3)
+    lgr=random.uniform(-3,3)
+    cr_range.append([10**lgc, 10**lgr])
+print("q3.2(b) Random Search")
+for me in mets:
+    [maxc,maxr]=select_param_quadratic(X_train, Y_train, metric=me, param_range=cr_range)
+    print("C=",maxc,"r=",maxr,"is optimal under",me,"metric")
+
+#q3.4(a)
+maxc=0
+maxperf=0
+for c in C_range:
+    clf=select_classifier(penalty='l1', c=c)
+    perf=cv_performance(clf, X_train, Y_train, metric="auroc")
+    if perf>maxperf:
+        maxc=c
+        maxperf=perf
+print("q3.4(a)")
+print("c=",maxc,"is optimal, perf=",maxperf)
+
+#q3.4(b)
+plot_weight(X_train, Y_train, "l1", C_range=C_range)
+\end{lstlisting}
+
+\subsection*{4 Asymmetric Cost Functions and Class Imbalance}
+\begin{lstlisting}
+#!/usr/bin/env python
+#q4.1(b)
+clf = select_classifier(c=0.01, class_weight={-1: 10,1 :1})
+clf.fit(X_train, Y_train)
+y_pred=clf.decision_function(X_test)
+perf=performance(Y_test, y_pred, metric="auroc")
+print("q4.1(b)")
+print("The auroc score is:",perf)
+y_pred=clf.predict(X_test)
+for me in mets:
+    if me!="auroc":
+        perf=performance(Y_test,y_pred,metric=me)
+        print("The",me,"score is",perf)
+
+#q4.2(a)
+clf = select_classifier(c=0.01, class_weight={-1: 1,1 :1})
+clf.fit(IMB_features, IMB_labels)
+y_pred=clf.decision_function(IMB_test_features)
+perf=performance(IMB_test_labels, y_pred, metric="auroc")
+print("q4.2(a)")
+print("The auroc score is:",perf)
+y_pred=clf.predict(IMB_test_features)
+for me in mets:
+    if me!="auroc":
+        perf=performance(IMB_test_labels,y_pred,metric=me)
+        print("The",me,"score is",perf)
+
+#q4.3(a) choose f1-score
+#Phase1: Grid Search
+W_range=[-2,-1.5,-1,-0.5,0,0.5,1,1.5,2]
+W_range=[10**w for w in W_range]
+maxwn=0
+maxwp=0
+maxperf=0
+for Wn in W_range:
+    for Wp in W_range:
+        clf = select_classifier(c=1, class_weight={-1: Wn, 1:Wp})
+        perf=cv_performance(clf, IMB_features, IMB_labels, metric="f1-score")
+        print(Wn, Wp, perf)
+        if perf>maxperf:
+            maxperf=perf
+            maxwn=Wn
+            maxwp=Wp
+print("q4.3(a) Wn=",maxwn,"Wp=",maxwp,"is optimal")
+print("performance is:",maxperf)
+
+#Phase2: Random Search
+for i in range(25):
+    Wn=10**random.uniform(-1,1)
+    Wp=Wn*3
+    clf = select_classifier(c=1, class_weight={-1: Wn, 1:Wp})
+    perf = cv_performance(clf, IMB_features, IMB_labels, metric="f1-score")
+    print(Wn, Wp, perf)
+    if perf>maxperf:
+        maxperf=perf
+        maxwn=Wn
+        maxwp=Wp
+print("Random Search Wn=",maxwn,"Wp=",maxwp,"is optimal")
+print("performance is:",maxperf)
+
+#q4.3(b)
+maxwn=0.21214604791131222
+maxwp=0.6364381437339367
+print("q4.3(b)")
+clf = select_classifier(c=1, class_weight={-1: maxwn, 1:maxwp})
+clf.fit(IMB_features, IMB_labels)
+y_pred=clf.predict(IMB_test_features)
+for me in mets:
+    if me != "auroc":
+        perf=performance(IMB_test_labels, y_pred, metric=me)
+        print("The",me,"score is",perf)
+y_pred=clf.decision_function(IMB_test_features)
+perf=performance(IMB_test_labels, y_pred, metric="auroc")
+print("The auroc score is",perf)
+
+#q4.4
+y_pred=clf.decision_function(IMB_test_features)
+fpr, tpr, _ = metrics.roc_curve(IMB_test_labels, y_pred)
+#balanced weights
+clf1 = select_classifier(c=0.01, class_weight={-1: 1, 1:1})
+clf1.fit(IMB_features, IMB_labels)
+y_pred1=clf1.decision_function(IMB_test_features)
+fpr1, tpr1, _ = metrics.roc_curve(IMB_test_labels, y_pred1)
+perf1=performance(IMB_test_labels, y_pred1, metric="auroc")
+
+plt.figure()
+plt.plot(fpr, tpr, color='darkorange', label='Custom W_n, W_p (AUROC = %0.2f)' % perf)
+plt.plot(fpr1, tpr1, color='blue', label='Balanced W_n, W_p (AUROC = %0.2f)' % perf1)
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('False Positive Rate')
+plt.ylabel('True Positive Rate')
+plt.title('Receiver operating characteristic curve')
+plt.legend(loc="lower right")
+plt.show()
+\end{lstlisting}
+
+\subsection*{5 Challenge}
+\begin{lstlisting}
+#!/usr/bin/env python
+def generate_feature_matrix(df, word_dict, count=False, normalize=False):
+    number_of_reviews = df.shape[0]
+    number_of_words = len(word_dict)
+    feature_matrix = np.zeros((number_of_reviews, number_of_words))
+    # TODO: Implement this function
+    index=0
+    for text in df["text"]:
+        for p in string.punctuation:
+            text=text.replace(p," ")
+        text=text.lower()
+        spl=text.split()
+        for word in spl:
+            if word in word_dict:
+                if count:
+                    feature_matrix[index,word_dict[word]]+=1
+                else:
+                    feature_matrix[index,word_dict[word]]=1
+        if normalize:
+            feature_matrix=feature_matrix*1.0
+            norm=np.linalg.norm(feature_matrix)
+            feature_matrix[index]=feature_matrix[index]/norm
+        index=index+1
+    return feature_matrix
+
+multiclass_features, multiclass_labels, multiclass_dictionary = get_multiclass_training_data()
+heldout_features = get_heldout_reviews(multiclass_dictionary)
+
+#Approach 1
+maxc=0
+maxr=0
+maxperf=0
+c_range=[1e-3]
+r_range=[1e-3,1e-2,0.1,1,10,100,1000]
+for c in c_range:
+    for r in r_range:
+        clf = select_classifier(penalty='l2', c=c, degree=2, r=r)
+        perf = cv_performance(clf, multiclass_features, multiclass_labels, k=5)
+        print("C=",c,"r=",r,"perf=",perf)
+        if perf>maxperf:
+            maxc=c
+            maxr=r
+            maxperf=perf
+print("C=",c,"r=",r,"perf=",perf,"is optimal")
+
+#Approach 2
+maxc=0
+maxperf=0
+c_range={1e-3,1e-2,0.1,1,10,100,1000}
+for c in c_range:
+    clf = select_classifier(penalty='l1', c=c, degree=1, r=0.0)
+    perf = cv_performance(clf, multiclass_features, multiclass_labels, k=5)
+    print("C=",c,"perf=",perf)
+    if perf>maxperf:
+        maxc=c
+        maxperf=perf
+print("C=",c,"perf=",perf,"is optimal")
+
+#Approach 3
+maxc=0
+maxperf=0
+c_range=[1e-3,1e-2,0.1,1,10,100,1000]
+for c in c_range:
+    clf = LinearSVC(C=c,max_iter=100000)
+    perf = cv_performance(clf, multiclass_features, multiclass_labels, k=5)
+    print("C=",c,"perf=",perf)
+    if perf>maxperf:
+        maxc=c
+        maxperf=perf
+print("C=",maxc,"perf=",maxperf,"is optimal")
+
+#Approach 4
+fname = "data/dataset.csv"
+dataframe = load_data(fname)
+multi_dict = extract_dictionary(dataframe)
+multi_features = generate_feature_matrix(dataframe, multi_dict, count=True)
+multi_labels = dataframe['label'].values.copy()
+
+print("l2 linear SVC with count, search for C")
+maxc=0
+maxperf=0
+c_range=list(range(41))
+c_range=[10**(-2+c*0.1) for c in c_range]
+
+for c in c_range:
+    clf = LinearSVC(C=c,max_iter=1000)
+    perf = cv_performance(clf, multiclass_features, multiclass_labels, k=5)
+    print("C=",c,"perf=",perf)
+    if perf>maxperf:
+        maxc=c
+        maxperf=perf
+print("C=",maxc,"perf=",maxperf,"is optimal")
+
+#Approach 5
+maxc=0
+maxr=0
+maxperf=0
+c_range=[1e-3,1e-2,0.1,1,10,100,1000]
+r_range=[1e-3,1e-2,0.1,1,10,100,1000]
+for c in c_range:
+    for r in r_range:
+        clf = SVC(kernel="poly",degree=2,C=c,coef0=r,gamma="auto",decision_function_shape="ovo")
+        perf = cv_performance(clf, multiclass_features, multiclass_labels, k=5)
+        print("C=",c,"r=",r,"perf=",perf)
+        if perf>maxperf:
+            maxc=c
+            maxr=r
+            maxperf=perf
+print("C=",c,"r=",r,"perf=",perf,"is optimal")
+
+#Conclusion
+multiclass_features, multiclass_labels, multiclass_dictionary = get_multiclass_training_data()
+heldout_features = get_heldout_reviews(multiclass_dictionary)
+clf = LinearSVC(C=0.04,max_iter=10000)
+clf.fit(multiclass_features, multiclass_labels)
+y_pred=clf.predict(heldout_features)
+generate_challenge_labels(y_pred, "dongzy")
+\end{lstlisting}
+
+
+
+
 
 
 \end{document}
