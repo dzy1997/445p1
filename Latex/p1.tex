@@ -8,6 +8,30 @@
 \date{February 10, 2019}
 \graphicspath{{images/}}
 
+\usepackage{listings}
+\usepackage{color}
+
+\definecolor{dkgreen}{rgb}{0,0.6,0}
+\definecolor{gray}{rgb}{0.5,0.5,0.5}
+\definecolor{mauve}{rgb}{0.58,0,0.82}
+
+\lstset{frame=tb,
+  language=Python,
+  aboveskip=3mm,
+  belowskip=3mm,
+  showstringspaces=false,
+  columns=flexible,
+  basicstyle={\small\ttfamily},
+  numbers=none,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{blue},
+  commentstyle=\color{dkgreen},
+  stringstyle=\color{mauve},
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=3
+}
+
 \begin{document}
 
 \maketitle
@@ -94,7 +118,9 @@ Specificity & 136.61 & 5.077 & 0.854 \\ \hline
 Grid Search & 1000 & 0.1 & 0.918 \\ \hline
 Random Search & 136.61 & 5.077 & 0.916\\ \hline
 \end{tabular}\\\\
-\indent The use of random search is generally better than grid search,
+\indent Generally, for a given $C$, the performance increases as $r$ increases,
+for a given $r$, the performance increases and then decreases as $C$ increases.
+The use of random search is generally better than grid search,
 as it visits more distinct values of $C$ and $r$.
 If $C$ and $r$ do not contribute equally to CV-performance
 (which is usually the case), random search is more likely to get closer to
@@ -185,5 +211,56 @@ Specificity &  0.9 \\ \hline
 \textbf{(a)} The ROC curves are shown below:\\
 \includegraphics[width=.5\textwidth]{44.png}\\
 \section*{5 Challenge}
+\indent For this challenge, I attempted various approaches to train the model,
+including those used in previous sections and some new approaches.
+Since we have three classes and we are equally interested in identifying each one,
+accuracy is a decent metric to evaluate the performance.
+Since the ground truth of the test set is unknown,
+I chose to optimize hyperparameters based on the accuracy score of 5-fold cross-validation.\\\\
+\textbf{Approach 1: Quadratic-kernel SVC, search for $C$ and $r$}\\
+\indent To start with, I used a quadratic-kernel SVC that is previously used.
+I first applied a grid search within range
+\{$10^{-3}$, $10^{-2}$, ..., $10^2$, $10^3$\} for both $C$ and $r$,
+and the best performance 0.715 was achieved when $C=1$, $r=1000$.
+Around that optimal value I conducted a second random search of 25 points,
+with $\lg C \in [-1,1]$ and $\lg r \in [2,4]$ uniformly distributed.
+The best performance 0.718 was achieved when $C=0.206$, $r=908.7$.\\\\
+\textbf{Approach 2: Linear SVC with L1 penalty, grid search for $C$}\\
+\indent The quadratic SVC hyperparameter selection was time consuming, so I switched to linear SVC with L1 penalty.
+I searched $C$ within range \{$10^{-3}$, $10^{-2}$, ..., $10^2$, $10^3$\}.
+The best performance 0.7076 was achieved when $C=1$.\\\\
+\textbf{Approach 3: Linear SVC with L2 penalty, grid search for $C$}\\
+\indent Still using a linear SVC, I switched to L2 penalty and searched for $C$
+within the same range. This time, the best performance 0.726 is achieved when $C=0.1$.\\\\
+\textbf{Approach 4: Finer grid search with word counting and normalization}\\
+\indent The results from linear SVC with L2 penalty seems better,
+so I decided to stick to that model and explore the effect of feature engineering on the results. I modified the \texttt{generate\_feature\_matrix}
+and added two options: Counting the number of times a word occurs in a review
+and normalizing each row of the feature matrix.
+I also made a finer grid search by having 41 values evenly distributed between
+$\lg C=-2$ and $\lg C=2$.
+It turns out that the two feature generating options does not improve the result of the model. The four combinations of these two options being On/Off
+gives the same best performance 0.731 when $C=0.040$,
+the improvement mainly due to a finer grid. I think the reason it did not work
+is that compared to the dictionary size,
+the number of duplicate words in a comment is small,
+let alone these duplicate words are often neutral words without emotional inclination
+like "I", "and", "to", "at". \\\\
+\textbf{Approach 5: Quadratic-kernel SVC under OvO mode}\\
+\indent Finally, I investigated the difference between OvO and OvR in a quadratic kernel SVC.
+In Approach 1 the \texttt{decision\_function\_shape} is set to OvR by default.
+Here I changed it to OvO and searched for $C$ and $r$ within the same range as used in Approach 1.
+The best performace 0.712 was achieved when $C=1$, $r=1000$,
+which is not very different from the result of approach 1.\\\\
+\textbf{Conclusion} After these approaches, I decided to choose a linear SVC with L2 penalty as my final model, with $C=0.040$
+
+\newpage
+\section*{Code}
+\begin{lstlisting}
+#!/usr/bin/env python
+
+
+\end{lstlisting}
+
 
 \end{document}
